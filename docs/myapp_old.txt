@@ -1,0 +1,142 @@
+// internal/app/myapp.go
+package app
+
+import (
+    "context"
+    "net/http"
+    "time"
+
+    "github.com/go-chi/chi/v5"
+    "github.com/go-chi/chi/v5/middleware"
+    "go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
+
+    "myapp/internal/config"
+    "myapp/internal/handler"
+    customMiddleware "myapp/internal/middleware"
+    "myapp/internal/repository/mongodb"
+    "myapp/internal/service"
+)
+
+type App struct {
+    cfg         *config.Config
+    router      *chi.Mux
+    httpServer  *http.Server
+    mongoClient *mongo.Client
+}
+
+func New(cfg *config.Config) (*App, error) {
+    app := &App{
+        cfg:    cfg,
+        router: chi.NewRouter(),
+    }
+    if err := app.initMongoDB(); err != nil {
+        return nil, err
+    }
+    app.initRouter()
+    app.initHTTPServer()
+    return app, nil
+}
+
+func (a *App) initMongoDB() error {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    client, err := mongo.Connect(ctx, options.Client().ApplyURI(a.cfg.MongoDB.URI))
+    if err != nil {
+        return err
+    }
+    if err := client.Ping(ctx, nil); err != nil {
+        return err
+    }
+    a.mongoClient = client
+    return nil
+}
+
+func (a *App) initRouter() {
+    // Middleware
+    a.router.Use(middleware.RequestID)
+    a.router.Use(middleware.RealIP)
+    a.router.Use(middleware.Logger)
+    a.router.Use(middleware.Recoverer)
+    a.router.Use(middleware.Timeout(60 * time.Second))
+    a.router.Use(customMiddleware.Cors)
+
+    // Initialize repositories
+    userRepo := mongodb.NewUserRepository(a.mongoClient.Database(a.cfg.MongoDB.Database))
+    sectionDetailRepo := mongodb.NewSectionDetailRepository(a.mongoClient.Database(a.cfg.MongoDB.Database))
+
+    // Initialize services
+    userService := service.NewUserService(userRepo)
+    sectionDetailService := service.NewSectionDetailService(sectionDetailRepo)
+
+    // Initialize handlers
+    userHandler := handler.NewUserHandler(userService)
+    sectionDetailHandler := handler.NewSectionDetailHandler(sectionDetailService)
+
+    // Routes
+    a.router.Route("/api/v1", func(r chi.Router) {
+        r.Route("/users", func(r chi.Router) {
+            r.Post("/", userHandler.Create)
+            r.Get("/", userHandler.List)
+            r.Route("/{id}", func(r chi.Router) {
+                r.Get("/", userHandler.Get)
+                r.Put("/", userHandler.Update)
+                r.Delete("/", userHandler.Delete)
+            })
+        })
+
+        r.Route("/sectionDetail", func(r chi.Router) {
+            r.Post("/", sectionDetailHandler.Create)
+            r.Get("/", sectionDetailHandler.List)
+            r.Route("/{id}", func(r chi.Router) {
+                r.Get("/", sectionDetailHandler.Get)
+                r.Put("/", sectionDetailHandler.Update)
+                r.Delete("/", sectionDetailHandler.Delete)
+            })
+        })
+    })
+
+    // Health check route
+    a.router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+        ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+        defer cancel()
+        if err := a.mongoClient.Ping(ctx, nil); err != nil {
+            w.WriteHeader(http.StatusServiceUnavailable)
+            w.Write([]byte("Database connection failed"))
+            return
+        }
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte("OK"))
+    })
+}
+
+func (a *App) initHTTPServer() {
+    a.httpServer = &http.Server{
+        Addr:         ":" + a.cfg.Server.Port,
+        Handler:      a.router,
+        ReadTimeout:  a.cfg.Server.ReadTimeout,
+        WriteTimeout: a.cfg.Server.WriteTimeout,
+        IdleTimeout:  time.Minute,
+    }
+}
+
+func (a *App) Run(ctx context.Context) error {
+    go func() {
+        if err := a.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+            // Log.Fatalf("Failed to start server: %v", err)
+        }
+    }()
+
+    <-ctx.Done()
+
+    shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+
+    if err := a.httpServer.Shutdown(shutdownCtx); err != nil {
+        return err
+    }
+    if err := a.mongoClient.Disconnect(shutdownCtx); err != nil {
+        return err
+    }
+    return nil
+}

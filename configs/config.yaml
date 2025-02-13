@@ -1,0 +1,12 @@
+server:
+  port: "8091"
+  read_timeout: 15s
+  write_timeout: 15s
+
+mongodb:
+  uri: "mongodb+srv://gauravkrv674:xR4Tqcx044G74IEm@cluster0.wwldf.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+  database: "myapp"
+
+jwt:
+  secret: "my-secret-key"
+  ttl: 24h
