@@ -18,6 +18,33 @@ func main() {
         log.Fatalf("Failed to load config: %v", err)
     }
 
+    // Override port with environment variable if provided
+    if port := os.Getenv("PORT"); port != "" {
+        cfg.Server.Port = port
+    }
+
+    // Create app instance
+    application, err := app.New(cfg)
+    if err != nil {
+        log.Fatalf("Failed to create app: %v", err)
+    }
+
+    // Use signal.NotifyContext instead of manual signal handling
+    ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+    defer stop()
+
+    if err := application.Run(ctx); err != nil {
+        log.Fatalf("Failed to run app: %v", err)
+    }
+}
+
+func mainOld() {
+    // Load configuration
+    cfg, err := config.Load()
+    if err != nil {
+        log.Fatalf("Failed to load config: %v", err)
+    }
+
     // Create app instance
     application, err := app.New(cfg)
     if err != nil {
