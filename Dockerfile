@@ -1,33 +1,7 @@
-# Build stage
-FROM golang:1.21-alpine AS builder
-
+FROM golang:1.21-alpine
 WORKDIR /app
-
-# Copy go mod and sum files
-COPY go.mod go.sum ./
-
-# Download dependencies
+COPY go.* ./
 RUN go mod download
-
-# Copy source code
 COPY . .
-
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o /app/main ./cmd/api
-
-# Final stage
-FROM alpine:latest
-
-WORKDIR /app
-
-# Copy the binary from builder
-COPY --from=builder /app/main .
-COPY --from=builder /app/configs/config.yaml ./configs/
-
-# Expose the port
-EXPOSE 8080
-
-
-
-# Run the application
-CMD ["./main"]
+RUN go build -tags netgo -ldflags '-s -w' -o app ./cmd/api
+CMD ["./app"]
