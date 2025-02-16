@@ -39,7 +39,7 @@ This repository is ideal for developers looking to:
 4. Access the API endpoints via `http://localhost:8080`.
 
 #### **Future Enhancements**
-- Add support for database integration (e.g., PostgreSQL).
+- Add support for other databases (e.g., PostgreSQL).
 - Implement authentication and authorization mechanisms (e.g., JWT, OAuth2).
 - Introduce Docker support for containerized deployment.
 - Expand test coverage and integrate CI/CD pipelines for automated testing and deployment.
