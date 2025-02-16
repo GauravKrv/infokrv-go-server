@@ -2,6 +2,7 @@
 package config
 
 import (
+    "os"
     "time"
 
     "github.com/spf13/viper"
@@ -36,10 +37,13 @@ func Load() (*Config, error) {
     if err := viper.ReadInConfig(); err != nil {
         return nil, err
     }
+    // Override MongoDB URI from environment variable if present
+    if mongoURI := os.Getenv("MONGODB_URI"); mongoURI != "" {
+            viper.Set("mongodb.uri", mongoURI)
+    }
 
     if err := viper.Unmarshal(&config); err != nil {
         return nil, err
     }
-
     return &config, nil
 }
